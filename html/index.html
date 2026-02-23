@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AX Quest Creator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;500;600;700&family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ══════════════════════════════════════════════════════ -->
+<!--  CREATOR PANEL                                         -->
+<!-- ══════════════════════════════════════════════════════ -->
+<div id="creator-panel" class="panel hidden">
+
+    <!-- Header -->
+    <div class="panel-header">
+        <div class="header-left">
+            <span class="header-icon">◈</span>
+            <div>
+                <div class="header-title">QUEST CREATOR</div>
+                <div class="header-sub">AX SYSTEMS — ADMIN PANEL</div>
+            </div>
+        </div>
+        <div class="header-right">
+            <div class="status-dot"></div>
+            <span class="status-text">ONLINE</span>
+            <button class="btn-close" id="btn-close">✕</button>
+        </div>
+    </div>
+
+    <!-- Scanline overlay -->
+    <div class="scanlines"></div>
+
+    <!-- Body: two columns -->
+    <div class="panel-body">
+
+        <!-- LEFT: Quest List -->
+        <div class="col-list">
+            <div class="col-header">
+                <span>MISIONES REGISTRADAS</span>
+                <button class="btn-new" id="btn-new-quest">+ NUEVA</button>
+            </div>
+            <div class="search-bar">
+                <input type="text" id="search-input" placeholder="Buscar misión..." />
+            </div>
+            <div class="quest-list" id="quest-list">
+                <!-- Populated by JS -->
+                <div class="list-empty">Cargando misiones...</div>
+            </div>
+        </div>
+
+        <!-- RIGHT: Form -->
+        <div class="col-form" id="form-panel">
+            <div class="form-placeholder" id="form-placeholder">
+                <div class="placeholder-icon">◈</div>
+                <div class="placeholder-text">Selecciona una misión para editar<br>o crea una nueva</div>
+            </div>
+
+            <form id="quest-form" class="quest-form hidden">
+                <input type="hidden" id="f-id">
+
+                <div class="form-section-title">INFORMACIÓN GENERAL</div>
+
+                <div class="form-row">
+                    <div class="form-group full">
+                        <label>NOMBRE DE MISIÓN</label>
+                        <input type="text" id="f-name" placeholder="Ej: Limpieza de Zona Norte" maxlength="100">
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group full">
+                        <label>DESCRIPCIÓN</label>
+                        <textarea id="f-description" placeholder="Descripción de la misión..." rows="3"></textarea>
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>TIPO DE MISIÓN</label>
+                        <select id="f-type" onchange="onTypeChange()">
+                            <option value="ELIMINATE">☠ ELIMINATE</option>
+                            <option value="COLLECT">📦 COLLECT</option>
+                            <option value="DEFEND">🛡 DEFEND</option>
+                            <option value="REPAIR">🔧 REPAIR</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>DIFICULTAD</label>
+                        <select id="f-difficulty">
+                            <option value="easy">FÁCIL</option>
+                            <option value="medium">MEDIA</option>
+                            <option value="hard">DIFÍCIL</option>
+                            <option value="extreme">EXTREMA</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>FACCIÓN (vacío = todas)</label>
+                        <select id="f-faction">
+                            <option value="">— TODAS —</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>ACTIVA</label>
+                        <div class="toggle-row">
+                            <label class="toggle">
+                                <input type="checkbox" id="f-active" checked>
+                                <span class="toggle-slider"></span>
+                            </label>
+                            <span class="toggle-label" id="active-label">SÍ</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>MÍNIMO JUGADORES</label>
+                        <input type="number" id="f-min-players" min="1" max="32" value="1">
+                    </div>
+                    <div class="form-group">
+                        <label>MÁXIMO JUGADORES</label>
+                        <input type="number" id="f-max-players" min="1" max="32" value="10">
+                    </div>
+                    <div class="form-group">
+                        <label>TIEMPO LÍMITE (seg)</label>
+                        <input type="number" id="f-time-limit" placeholder="vacío = ∞" min="0">
+                    </div>
+                    <div class="form-group">
+                        <label>COOLDOWN (min)</label>
+                        <input type="number" id="f-cooldown" min="0" value="60">
+                    </div>
+                </div>
+
+                <!-- OBJECTIVE DATA SECTION — Dinámico por tipo -->
+                <div class="form-section-title" style="margin-top:18px;">DATOS DEL OBJETIVO</div>
+
+                <!-- ZONE COMMON -->
+                <div class="obj-section" id="obj-zone-section">
+                    <div class="form-row">
+                        <div class="form-group"><label>ZONA X</label><input type="number" id="obj-zone-x" step="0.1" placeholder="0.0"></div>
+                        <div class="form-group"><label>ZONA Y</label><input type="number" id="obj-zone-y" step="0.1" placeholder="0.0"></div>
+                        <div class="form-group"><label>ZONA Z</label><input type="number" id="obj-zone-z" step="0.1" placeholder="0.0"></div>
+                        <div class="form-group"><label>RADIO</label><input type="number" id="obj-zone-r" step="1" placeholder="50" value="50"></div>
+                    </div>
+                </div>
+
+                <!-- ELIMINATE -->
+                <div class="obj-section hidden" id="obj-eliminate">
+                    <div class="form-row">
+                        <div class="form-group full">
+                            <label>CANTIDAD A ELIMINAR</label>
+                            <input type="number" id="obj-elim-amount" min="1" value="10">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- COLLECT -->
+                <div class="obj-section hidden" id="obj-collect">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>ÍTEM (nombre ox_inventory)</label>
+                            <input type="text" id="obj-collect-item" placeholder="ej: medical_supply">
+                        </div>
+                        <div class="form-group">
+                            <label>CANTIDAD</label>
+                            <input type="number" id="obj-collect-amount" min="1" value="5">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- DEFEND -->
+                <div class="obj-section hidden" id="obj-defend">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>DURACIÓN (segundos)</label>
+                            <input type="number" id="obj-defend-duration" min="30" value="300">
+                        </div>
+                        <div class="form-group">
+                            <label>JUGADORES MÍNIMOS EN ZONA</label>
+                            <input type="number" id="obj-defend-minpl" min="1" value="2">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- REPAIR -->
+                <div class="obj-section hidden" id="obj-repair">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>TIEMPO DE REPARACIÓN (ms)</label>
+                            <input type="number" id="obj-repair-time" min="1000" step="500" value="10000">
+                        </div>
+                    </div>
+                    <div id="repair-points-container"></div>
+                    <button type="button" class="btn-add-point" onclick="addRepairPoint()">+ AGREGAR PUNTO</button>
+                </div>
+
+                <!-- RECOMPENSAS -->
+                <div class="form-section-title" style="margin-top:18px;">RECOMPENSAS</div>
+                <div class="form-row">
+                    <div class="form-group full">
+                        <label>DINERO ($)</label>
+                        <input type="number" id="f-reward-money" min="0" value="0" placeholder="0">
+                    </div>
+                </div>
+
+                <div id="reward-items-container"></div>
+                <button type="button" class="btn-add-point" onclick="addRewardItem()">+ AGREGAR ÍTEM</button>
+
+                <!-- ACTIONS -->
+                <div class="form-actions">
+                    <button type="button" class="btn-cancel" id="btn-cancel">CANCELAR</button>
+                    <button type="button" class="btn-delete hidden" id="btn-delete">ELIMINAR</button>
+                    <button type="button" class="btn-save" id="btn-save">GUARDAR MISIÓN</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script src="script.js"></script>
+</body>
+</html>
