@@ -1,50 +1,40 @@
-// ============================================================
-//  AX_QuestCreator | nui/script.js
-//  Comunicación NUI ↔ FiveM + lógica del Creator Panel
-// ============================================================
-
 'use strict';
 
-// ─── ESTADO ─────────────────────────────────────────────────
+let allQuests    = [];
+let selectedId   = null;
+let isEditMode   = false;
+let deliveryItems = [];
+let rewardItems  = [];
+let oxItems = [];
 
-let allQuests     = [];
-let selectedId    = null;
-let repairPoints  = [];
-let rewardItems   = [];
-let isEditMode    = false;
+// ─── NUI MESSAGES ───────────────────────────────────────────
 
-// ─── NUI MESSAGE HANDLER ────────────────────────────────────
-
-window.addEventListener('message', (event) => {
-    const { action } = event.data;
-
-    switch (action) {
-        case 'openCreator':
-            allQuests = event.data.quests || [];
-            showCreatorPanel();
-            renderQuestList();
-            fetchFactions();
-            break;
-
-        case 'factionsList':
-            populateFactionDropdown(event.data.factions || []);
-            break;
-
-        case 'questCreated':
-        case 'questUpdated':
-        case 'questDeleted':
-            // La lista se recargará automáticamente vía OpenCreatorNUI
-            break;
-
-        case 'forceClose':
-            hideAll();
-            break;
+window.addEventListener('message', (e) => {
+    const { action } = e.data;
+    if (action === 'openCreator') {
+        allQuests = e.data.quests || [];
+        oxItems = e.data.items || [];
+        showPanel();
+        renderQuestList();
+        fetchFactions();
+    } else if (action === 'factionsList') {
+        populateFactions(e.data.factions || []);
+    } else if (action === 'forceClose') {
+        hideAll();
+    } else if (['questCreated','questUpdated','questDeleted'].includes(action)) {
+        // Lista se recarga sola vía OpenCreatorNUI
+    } else if (action === 'openDelivery') {
+        openDeliveryModal(e.data);
+    } else if (action === 'updateDeliveryProgress') {
+        if (e.data.delivered) {
+            renderModalItems(e.data.items, e.data.delivered);
+        }
     }
 });
 
-// ─── PANEL VISIBILITY ───────────────────────────────────────
+// ─── PANEL ──────────────────────────────────────────────────
 
-function showCreatorPanel() {
+function showPanel() {
     document.getElementById('creator-panel').classList.remove('hidden');
 }
 
@@ -53,22 +43,22 @@ function hideAll() {
     resetForm();
 }
 
-// ─── RENDER QUEST LIST ──────────────────────────────────────
+// ─── QUEST LIST ─────────────────────────────────────────────
 
 function renderQuestList(filter = '') {
     const container = document.getElementById('quest-list');
-    const filtered  = allQuests.filter(q =>
-        q.name.toLowerCase().includes(filter.toLowerCase()) ||
-        q.description.toLowerCase().includes(filter.toLowerCase())
+    const f = filter.toLowerCase();
+    const filtered = allQuests.filter(q =>
+        q.name.toLowerCase().includes(f) || q.description.toLowerCase().includes(f)
     );
 
-    if (filtered.length === 0) {
+    if (!filtered.length) {
         container.innerHTML = '<div class="list-empty">Sin misiones encontradas</div>';
         return;
     }
 
-    const typeLabels = { ELIMINATE: '☠', COLLECT: '📦', DEFEND: '🛡', REPAIR: '🔧' };
-    const diffLabel  = { easy: 'FÁCIL', medium: 'MEDIA', hard: 'DIFÍCIL', extreme: 'EXTREMA' };
+    const typeIcon = { DELIVERY: '📦', TERRITORY: '💀' };
+    const diffLabel = { easy: 'FÁCIL', medium: 'MEDIA', hard: 'DIFÍCIL', extreme: 'EXTREMA' };
 
     container.innerHTML = filtered.map(q => `
         <div class="quest-item ${q.id == selectedId ? 'active' : ''} ${!q.is_active ? 'inactive' : ''}"
@@ -76,82 +66,62 @@ function renderQuestList(filter = '') {
             <div class="qi-top">
                 <span class="qi-name">${escHtml(q.name)}</span>
                 <div class="qi-badges">
-                    <span class="badge badge-type-${q.type}">${typeLabels[q.type] || q.type}</span>
-                    <span class="badge badge-diff-${q.difficulty}">${diffLabel[q.difficulty] || q.difficulty}</span>
+                    <span class="badge badge-type-${q.type}">${typeIcon[q.type] || q.type}</span>
+                    <span class="badge badge-diff-${q.difficulty}">${diffLabel[q.difficulty]}</span>
                 </div>
             </div>
-            <div class="qi-desc">${escHtml(q.description.substring(0, 60))}${q.description.length > 60 ? '…' : ''}</div>
+            <div class="qi-desc">${escHtml((q.description||'').substring(0,65))}${(q.description||'').length>65?'…':''}</div>
             <div class="qi-status ${q.is_active ? 'on' : 'off'}"></div>
         </div>
     `).join('');
 }
 
-// ─── SELECCIONAR MISIÓN PARA EDITAR ─────────────────────────
+// ─── SELECT QUEST ────────────────────────────────────────────
 
 function selectQuest(id) {
     selectedId = id;
     isEditMode = true;
     renderQuestList(document.getElementById('search-input').value);
 
-    const quest = allQuests.find(q => q.id == id);
-    if (!quest) return;
+    const q = allQuests.find(x => x.id == id);
+    if (!q) return;
 
     showForm();
 
-    // Llenar campos básicos
-    document.getElementById('f-id').value          = quest.id;
-    document.getElementById('f-name').value        = quest.name;
-    document.getElementById('f-description').value = quest.description;
-    document.getElementById('f-type').value        = quest.type;
-    document.getElementById('f-difficulty').value  = quest.difficulty;
-    document.getElementById('f-faction').value     = quest.faction_id || '';
-    document.getElementById('f-active').checked    = !!quest.is_active;
-    document.getElementById('active-label').textContent = quest.is_active ? 'SÍ' : 'NO';
-    document.getElementById('f-min-players').value = quest.min_players;
-    document.getElementById('f-max-players').value = quest.max_players;
-    document.getElementById('f-time-limit').value  = quest.time_limit || '';
-    document.getElementById('f-cooldown').value    = quest.cooldown_minutes;
+    document.getElementById('f-id').value          = q.id;
+    document.getElementById('f-name').value        = q.name;
+    document.getElementById('f-description').value = q.description;
+    document.getElementById('f-type').value        = q.type;
+    document.getElementById('f-difficulty').value  = q.difficulty;
+    document.getElementById('f-faction').value     = q.faction_id || '';
+    document.getElementById('f-active').checked    = !!q.is_active;
+    document.getElementById('active-label').textContent = q.is_active ? 'SÍ' : 'NO';
+    document.getElementById('f-cooldown-hours').value = q.cooldown_minutes || 0;  // ← cooldown
+    const obj = typeof q.objective_data === 'string' ? JSON.parse(q.objective_data) : q.objective_data;
+    const rew = typeof q.rewards === 'string' ? JSON.parse(q.rewards) : q.rewards;
 
-    // Objective data
-    const obj = typeof quest.objective_data === 'string'
-        ? JSON.parse(quest.objective_data) : quest.objective_data;
-
-    fillObjectiveFields(quest.type, obj);
-
-    // Rewards
-    const rew = typeof quest.rewards === 'string'
-        ? JSON.parse(quest.rewards) : quest.rewards;
+    fillObjective(q.type, obj);
 
     document.getElementById('f-reward-money').value = rew.money || 0;
+    document.getElementById('f-reward-xp').value    = rew.xp    || 0;
     rewardItems = rew.items || [];
     renderRewardItems();
 
-    // Mostrar botón eliminar
     document.getElementById('btn-delete').classList.remove('hidden');
 }
 
-function fillObjectiveFields(type, obj) {
-    onTypeChange(type); // Mostrar la sección correcta
+function fillObjective(type, obj) {
+    onTypeChange(type);
 
-    if (obj.zone) {
-        document.getElementById('obj-zone-x').value = obj.zone.x || 0;
-        document.getElementById('obj-zone-y').value = obj.zone.y || 0;
-        document.getElementById('obj-zone-z').value = obj.zone.z || 0;
-        document.getElementById('obj-zone-r').value = obj.zone.radius || 50;
-    }
-
-    if (type === 'ELIMINATE') {
-        document.getElementById('obj-elim-amount').value = obj.amount || 10;
-    } else if (type === 'COLLECT') {
-        document.getElementById('obj-collect-item').value   = obj.item || '';
-        document.getElementById('obj-collect-amount').value = obj.amount || 5;
-    } else if (type === 'DEFEND') {
-        document.getElementById('obj-defend-duration').value = obj.duration_seconds || 300;
-        document.getElementById('obj-defend-minpl').value    = obj.min_players_inside || 2;
-    } else if (type === 'REPAIR') {
-        document.getElementById('obj-repair-time').value = obj.interact_time || 10000;
-        repairPoints = (obj.points || []).map(p => ({ ...p }));
-        renderRepairPoints();
+    if (type === 'DELIVERY') {
+        deliveryItems = (obj.items || []).map(i => ({...i}));
+        renderDeliveryItems();
+    } else if (type === 'TERRITORY') {
+        document.getElementById('obj-zone-x').value = obj.zone?.x || 0;
+        document.getElementById('obj-zone-y').value = obj.zone?.y || 0;
+        document.getElementById('obj-zone-z').value = obj.zone?.z || 0;
+        document.getElementById('obj-zone-r').value = obj.zone?.radius || 80;
+        document.getElementById('obj-kills').value  = obj.kills_required || 50;
     }
 }
 
@@ -162,11 +132,11 @@ document.getElementById('btn-new-quest').addEventListener('click', () => {
     isEditMode = false;
     resetForm();
     showForm();
+    onTypeChange('DELIVERY');
     document.getElementById('btn-delete').classList.add('hidden');
-    onTypeChange('ELIMINATE');
 });
 
-// ─── FORMULARIO ──────────────────────────────────────────────
+// ─── FORM ────────────────────────────────────────────────────
 
 function showForm() {
     document.getElementById('form-placeholder').classList.add('hidden');
@@ -174,63 +144,66 @@ function showForm() {
 }
 
 function resetForm() {
-    selectedId = null;
-    repairPoints = [];
+    selectedId   = null;
+    deliveryItems = [];
     rewardItems  = [];
-
     const form = document.getElementById('quest-form');
     form.classList.add('hidden');
     form.reset();
-
     document.getElementById('form-placeholder').classList.remove('hidden');
-    document.getElementById('repair-points-container').innerHTML = '';
-    document.getElementById('reward-items-container').innerHTML  = '';
+    document.getElementById('delivery-items-container').innerHTML = '';
+    document.getElementById('reward-items-container').innerHTML   = '';
     document.getElementById('btn-delete').classList.add('hidden');
     document.getElementById('f-id').value = '';
 }
 
-// ─── TIPO → SECCIONES DINÁMICAS ─────────────────────────────
+function onTypeChange(forced) {
+    const type = forced || document.getElementById('f-type').value;
+    if (!forced) document.getElementById('f-type').value = type;
 
-function onTypeChange(forcedType) {
-    const type = forcedType || document.getElementById('f-type').value;
-    if (!forcedType) document.getElementById('f-type').value = type;
-
-    const hasZone   = ['ELIMINATE','COLLECT','DEFEND'].includes(type);
-    const showElim  = type === 'ELIMINATE';
-    const showColl  = type === 'COLLECT';
-    const showDef   = type === 'DEFEND';
-    const showRep   = type === 'REPAIR';
-
-    document.getElementById('obj-zone-section').classList.toggle('hidden', !hasZone);
-    document.getElementById('obj-eliminate').classList.toggle('hidden', !showElim);
-    document.getElementById('obj-collect').classList.toggle('hidden', !showColl);
-    document.getElementById('obj-defend').classList.toggle('hidden', !showDef);
-    document.getElementById('obj-repair').classList.toggle('hidden', !showRep);
+    document.getElementById('obj-delivery').classList.toggle('hidden',  type !== 'DELIVERY');
+    document.getElementById('obj-territory').classList.toggle('hidden', type !== 'TERRITORY');
 }
 
-// ─── REPAIR POINTS ───────────────────────────────────────────
+// ─── DELIVERY ITEMS ──────────────────────────────────────────
 
-function addRepairPoint() {
-    repairPoints.push({ x: 0, y: 0, z: 0, label: '' });
-    renderRepairPoints();
+function addDeliveryItem() {
+    deliveryItems.push({ name: '', amount: 1, label: '' });
+    renderDeliveryItems();
 }
 
-function removeRepairPoint(idx) {
-    repairPoints.splice(idx, 1);
-    renderRepairPoints();
+function removeDeliveryItem(i) {
+    deliveryItems.splice(i, 1);
+    renderDeliveryItems();
 }
 
-function renderRepairPoints() {
-    const container = document.getElementById('repair-points-container');
-    container.innerHTML = repairPoints.map((p, i) => `
-        <div class="repair-point" id="rp-${i}">
-            <div class="form-group"><label>X</label><input type="number" step="0.1" value="${p.x}" onchange="repairPoints[${i}].x=parseFloat(this.value)"></div>
-            <div class="form-group"><label>Y</label><input type="number" step="0.1" value="${p.y}" onchange="repairPoints[${i}].y=parseFloat(this.value)"></div>
-            <div class="form-group"><label>Z</label><input type="number" step="0.1" value="${p.z}" onchange="repairPoints[${i}].z=parseFloat(this.value)"></div>
-            <div class="form-group"><label>ETIQUETA</label><input type="text" value="${escHtml(p.label)}" placeholder="Ej: Generador A" onchange="repairPoints[${i}].label=this.value"></div>
-            <button type="button" class="btn-remove-point" onclick="removeRepairPoint(${i})">✕</button>
+function renderDeliveryItems() {
+    const c = document.getElementById('delivery-items-container');
+    if (!deliveryItems.length) {
+        c.innerHTML = '<div class="list-empty" style="padding:10px 0">Sin items configurados</div>';
+        return;
+    }
+    c.innerHTML = deliveryItems.map((item, i) => `
+        <div class="delivery-item-row">
+            <div class="form-group">
+                <label>NOMBRE (ox_inventory)</label>
+                <input type="text" id="di-name-${i}" value="${escHtml(item.name)}" placeholder="Buscar item..."
+                    onchange="deliveryItems[${i}].name=this.value">
+            </div>
+            <div class="form-group">
+                <label>CANTIDAD</label>
+                <input type="number" min="1" value="${item.amount}"
+                    onchange="deliveryItems[${i}].amount=parseInt(this.value)||1">
+            </div>
+            <div class="form-group">
+                <label>ETIQUETA</label>
+                <input type="text" value="${escHtml(item.label)}" placeholder="ej: Chatarra"
+                    onchange="deliveryItems[${i}].label=this.value">
+            </div>
+            <button type="button" class="btn-remove-point" onclick="removeDeliveryItem(${i})">✕</button>
         </div>
     `).join('');
+    deliveryItems.forEach((_, i) => createItemInput(`di-name-${i}`, i, 'deliveryItems', 'name'));
 }
 
 // ─── REWARD ITEMS ────────────────────────────────────────────
@@ -240,119 +213,107 @@ function addRewardItem() {
     renderRewardItems();
 }
 
-function removeRewardItem(idx) {
-    rewardItems.splice(idx, 1);
+function removeRewardItem(i) {
+    rewardItems.splice(i, 1);
     renderRewardItems();
 }
 
 function renderRewardItems() {
-    const container = document.getElementById('reward-items-container');
-    container.innerHTML = rewardItems.map((item, i) => `
-        <div class="reward-item">
+    const c = document.getElementById('reward-items-container');
+    c.innerHTML = rewardItems.map((item, i) => `
+        <div class="delivery-item-row">
             <div class="form-group">
-                <label>ÍTEM (ox_inventory name)</label>
-                <input type="text" value="${escHtml(item.name)}" placeholder="ej: bandage" onchange="rewardItems[${i}].name=this.value">
+                <label>ÍTEM (ox_inventory)</label>
+                <input type="text" id="ri-name-${i}" value="${escHtml(item.name)}" placeholder="Buscar item..."
+                    onchange="rewardItems[${i}].name=this.value">
             </div>
             <div class="form-group">
                 <label>CANTIDAD</label>
-                <input type="number" min="1" value="${item.amount}" onchange="rewardItems[${i}].amount=parseInt(this.value)||1">
+                <input type="number" min="1" value="${item.amount}"
+                    onchange="rewardItems[${i}].amount=parseInt(this.value)||1">
             </div>
             <button type="button" class="btn-remove-point" onclick="removeRewardItem(${i})">✕</button>
         </div>
     `).join('');
+    rewardItems.forEach((_, i) => createItemInput(`ri-name-${i}`, i, 'rewardItems', 'name'));
 }
 
-// ─── TOGGLE ACTIVO ───────────────────────────────────────────
+// ─── TOGGLE ──────────────────────────────────────────────────
 
-document.getElementById('f-active').addEventListener('change', function () {
+document.getElementById('f-active').addEventListener('change', function() {
     document.getElementById('active-label').textContent = this.checked ? 'SÍ' : 'NO';
 });
 
-// ─── RECOPILAR DATOS DEL FORMULARIO ─────────────────────────
+// ─── RECOPILAR DATOS ─────────────────────────────────────────
 
 function collectFormData() {
     const type = document.getElementById('f-type').value;
-
-    // Construir objective_data
     let objectiveData = {};
-
-    if (type !== 'REPAIR') {
+    if (type === 'DELIVERY') {
+        objectiveData.items = deliveryItems.map(i => ({
+            name:   i.name.trim(),
+            amount: parseInt(i.amount) || 1,
+            label:  i.label.trim() || i.name.trim()
+        }));
+    } else if (type === 'TERRITORY') {
         objectiveData.zone = {
             x:      parseFloat(document.getElementById('obj-zone-x').value) || 0,
             y:      parseFloat(document.getElementById('obj-zone-y').value) || 0,
             z:      parseFloat(document.getElementById('obj-zone-z').value) || 0,
-            radius: parseFloat(document.getElementById('obj-zone-r').value) || 50,
+            radius: parseFloat(document.getElementById('obj-zone-r').value) || 80,
         };
+        objectiveData.kills_required = parseInt(document.getElementById('obj-kills').value) || 50;
     }
-
-    if (type === 'ELIMINATE') {
-        objectiveData.amount = parseInt(document.getElementById('obj-elim-amount').value) || 10;
-    } else if (type === 'COLLECT') {
-        objectiveData.item   = document.getElementById('obj-collect-item').value.trim();
-        objectiveData.amount = parseInt(document.getElementById('obj-collect-amount').value) || 5;
-        objectiveData.drop_on_kill = false;
-    } else if (type === 'DEFEND') {
-        objectiveData.duration_seconds  = parseInt(document.getElementById('obj-defend-duration').value) || 300;
-        objectiveData.min_players_inside = parseInt(document.getElementById('obj-defend-minpl').value) || 2;
-    } else if (type === 'REPAIR') {
-        objectiveData.interact_time = parseInt(document.getElementById('obj-repair-time').value) || 10000;
-        objectiveData.points = repairPoints.map(p => ({
-            x: parseFloat(p.x) || 0,
-            y: parseFloat(p.y) || 0,
-            z: parseFloat(p.z) || 0,
-            label: p.label || ''
-        }));
-    }
-
-    const timeLimitVal = document.getElementById('f-time-limit').value;
-
     return {
-        id:              document.getElementById('f-id').value,
-        name:            document.getElementById('f-name').value.trim(),
-        description:     document.getElementById('f-description').value.trim(),
-        type:            type,
-        difficulty:      document.getElementById('f-difficulty').value,
-        faction_id:      document.getElementById('f-faction').value,
-        min_players:     parseInt(document.getElementById('f-min-players').value) || 1,
-        max_players:     parseInt(document.getElementById('f-max-players').value) || 10,
-        time_limit:      timeLimitVal !== '' ? parseInt(timeLimitVal) : '',
-        cooldown_minutes: parseInt(document.getElementById('f-cooldown').value) || 60,
-        is_active:       document.getElementById('f-active').checked,
-        objective_data:  objectiveData,
+        id:             document.getElementById('f-id').value,
+        name:           document.getElementById('f-name').value.trim(),
+        description:    document.getElementById('f-description').value.trim(),
+        type,
+        difficulty:     document.getElementById('f-difficulty').value,
+        faction_id:     document.getElementById('f-faction').value,
+        is_active:      document.getElementById('f-active').checked,
+        cooldown_minutes: parseInt(document.getElementById('f-cooldown-hours').value) || 0,
+        objective_data: objectiveData,
         rewards: {
             money: parseInt(document.getElementById('f-reward-money').value) || 0,
+            xp:    parseInt(document.getElementById('f-reward-xp').value)    || 0,
             items: rewardItems.filter(i => i.name.trim() !== '')
         }
     };
 }
 
 function validateForm(data) {
-    if (!data.name) { alert('El nombre de la misión es requerido.'); return false; }
-    if (!data.type)  { alert('El tipo de misión es requerido.'); return false; }
-
-    if (data.type === 'REPAIR' && data.objective_data.points.length === 0) {
-        alert('Agrega al menos un punto de reparación.'); return false;
+    if (!data.name) { alert('El nombre es requerido.'); return false; }
+    if (data.type === 'DELIVERY' && (!data.objective_data.items || !data.objective_data.items.length)) {
+        alert('Agrega al menos un item requerido para la entrega.'); return false;
     }
-    if (data.type === 'COLLECT' && !data.objective_data.item) {
-        alert('El nombre del ítem es requerido para misiones COLLECT.'); return false;
+    if (data.type === 'DELIVERY') {
+        for (const item of data.objective_data.items) {
+            if (!item.name) { alert('Todos los items deben tener nombre.'); return false; }
+        }
     }
     return true;
 }
 
-// ─── GUARDAR ─────────────────────────────────────────────────
+function fillCurrentCoords() {
+    fetchNUI('getPlayerCoords', {}).then(r => r.json()).then(coords => {
+        document.getElementById('obj-zone-x').value = coords.x;
+        document.getElementById('obj-zone-y').value = coords.y;
+        document.getElementById('obj-zone-z').value = coords.z;
+    });
+}
+
+// ─── ACCIONES ────────────────────────────────────────────────
 
 document.getElementById('btn-save').addEventListener('click', () => {
     const data = collectFormData();
     if (!validateForm(data)) return;
-
     if (isEditMode && data.id) {
         fetchNUI('updateQuest', data);
     } else {
         fetchNUI('createQuest', data);
     }
 });
-
-// ─── ELIMINAR ────────────────────────────────────────────────
 
 document.getElementById('btn-delete').addEventListener('click', () => {
     const id = document.getElementById('f-id').value;
@@ -362,49 +323,39 @@ document.getElementById('btn-delete').addEventListener('click', () => {
     resetForm();
 });
 
-// ─── CANCELAR ────────────────────────────────────────────────
-
 document.getElementById('btn-cancel').addEventListener('click', () => {
     resetForm();
     selectedId = null;
     renderQuestList(document.getElementById('search-input').value);
 });
 
-// ─── CERRAR ──────────────────────────────────────────────────
-
 document.getElementById('btn-close').addEventListener('click', () => {
     fetchNUI('closeCreator', {});
     hideAll();
 });
 
-// ─── SEARCH ──────────────────────────────────────────────────
-
-document.getElementById('search-input').addEventListener('input', (e) => {
+document.getElementById('search-input').addEventListener('input', e => {
     renderQuestList(e.target.value);
 });
 
 // ─── FACCIONES ───────────────────────────────────────────────
 
-function fetchFactions() {
-    fetchNUI('getFactions', {});
-}
+function fetchFactions() { fetchNUI('getFactions', {}); }
 
-function populateFactionDropdown(factions) {
-    const select = document.getElementById('f-faction');
-    // Mantener la opción "Todas"
-    const allOption = select.options[0];
-    select.innerHTML = '';
-    select.appendChild(allOption);
-
+function populateFactions(factions) {
+    const sel = document.getElementById('f-faction');
+    const all = sel.options[0];
+    sel.innerHTML = '';
+    sel.appendChild(all);
     factions.forEach(f => {
         const opt = document.createElement('option');
-        opt.value       = f.name;
+        opt.value = f.name;
         opt.textContent = f.label || f.name;
-        select.appendChild(opt);
+        sel.appendChild(opt);
     });
 }
 
-// ─── UTILIDADES ─────────────────────────────────────────────
+// ─── UTILS ───────────────────────────────────────────────────
 
 function fetchNUI(action, data) {
     return fetch(`https://AX_QuestCreator/${action}`, {
@@ -416,9 +367,142 @@ function fetchNUI(action, data) {
 
 function escHtml(str) {
     if (!str) return '';
-    return String(str)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;');
+    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ─── DELIVERY MODAL ──────────────────────────────────────────
+
+let currentDeliveryInstanceId = null;
+
+window.addEventListener('message', (e) => {
+    // Este handler ya existe, solo agrega el case dentro del switch:
+    // action === 'openDelivery' → openDeliveryModal(e.data)
+});
+
+function openDeliveryModal(data) {
+    currentDeliveryInstanceId = data.instanceId;
+
+    document.getElementById('modal-npc-label').textContent  = data.npcLabel.toUpperCase();
+    document.getElementById('modal-quest-name').textContent = data.questName;
+
+    renderModalItems(data.items, data.delivered);
+
+    document.getElementById('delivery-modal').classList.remove('hidden');
+}
+
+function renderModalItems(items, delivered) {
+    const container = document.getElementById('modal-items-list');
+    const allDone   = items.every(i => (delivered[i.name] || 0) >= i.amount);
+
+    container.innerHTML = items.map(item => {
+        const done    = delivered[item.name] || 0;
+        const pct     = Math.min(Math.round((done / item.amount) * 100), 100);
+        const isComplete = done >= item.amount;
+
+        // Ruta de icono ox_inventory
+        const iconUrl = `nui://ox_inventory/web/images/${item.name}.png`;
+
+        return `
+        <div class="delivery-item ${isComplete ? 'complete' : ''}">
+            <div class="item-icon">
+                <img src="${iconUrl}" alt="${item.name}"
+                    onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+                <div class="item-icon-fallback" style="display:none">📦</div>
+            </div>
+            <div class="item-info">
+                <div class="item-label">${escHtml(item.label || item.name)}</div>
+                <div class="item-name-small">${escHtml(item.name)}</div>
+            </div>
+            <div class="item-progress">
+                <div class="item-amounts">
+                    <span class="done ${isComplete ? '' : ''}">${done}</span>
+                    <span class="slash"> / </span>
+                    <span class="total">${item.amount}</span>
+                </div>
+                <div class="item-bar-wrap">
+                    <div class="item-bar-fill ${isComplete ? 'full' : ''}" style="width:${pct}%"></div>
+                </div>
+            </div>
+        </div>
+        `;
+    }).join('');
+
+    // Deshabilitar botón si ya está todo completo
+    document.getElementById('modal-deliver-btn').disabled = allDone;
+    document.getElementById('modal-deliver-btn').textContent = allDone ? '✓ COMPLETADO' : 'ENTREGAR MATERIALES';
+}
+
+function closeDeliveryModal() {
+    document.getElementById('delivery-modal').classList.add('hidden');
+    fetchNUI('closeDelivery', {});
+}
+
+document.getElementById('modal-close').addEventListener('click', closeDeliveryModal);
+
+document.getElementById('modal-deliver-btn').addEventListener('click', () => {
+    if (!currentDeliveryInstanceId) return;
+    fetchNUI('deliverItems', { instanceId: currentDeliveryInstanceId });
+    document.getElementById('delivery-modal').classList.add('hidden');
+});
+
+function createItemInput(inputId, index, arrayName, fieldName) {
+    const input = document.getElementById(inputId);
+    if (!input) return;
+
+    // Crear wrapper y dropdown
+    const wrapper = document.createElement('div');
+    wrapper.className = 'item-autocomplete-wrapper';
+    input.parentNode.insertBefore(wrapper, input);
+    wrapper.appendChild(input);
+
+    const dropdown = document.createElement('div');
+    dropdown.className = 'item-dropdown hidden';
+    wrapper.appendChild(dropdown);
+
+    input.addEventListener('input', () => {
+        const val = input.value.toLowerCase().trim();
+        if (!val || val.length < 2) { dropdown.classList.add('hidden'); return; }
+
+        const matches = oxItems.filter(i =>
+            i.name.toLowerCase().includes(val) || i.label.toLowerCase().includes(val)
+        ).slice(0, 8);
+
+        if (!matches.length) { dropdown.classList.add('hidden'); return; }
+
+        dropdown.innerHTML = matches.map(item => `
+            <div class="item-suggestion" onclick="selectItemSuggestion('${inputId}', '${item.name}', '${escHtml(item.label)}', ${index}, '${arrayName}', '${fieldName}')">
+                <div class="suggestion-icon">
+                    <img src="nui://ox_inventory/web/images/${item.name}.png"
+                        onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"
+                        style="width:24px;height:24px;object-fit:contain">
+                    <span style="display:none;font-size:14px">📦</span>
+                </div>
+                <div class="suggestion-info">
+                    <span class="suggestion-label">${escHtml(item.label)}</span>
+                    <span class="suggestion-name">${item.name}</span>
+                </div>
+            </div>
+        `).join('');
+
+        dropdown.classList.remove('hidden');
+    });
+
+    // Cerrar al hacer click fuera
+    document.addEventListener('click', (e) => {
+        if (!wrapper.contains(e.target)) dropdown.classList.add('hidden');
+    });
+}
+
+function selectItemSuggestion(inputId, name, label, index, arrayName, fieldName) {
+    document.getElementById(inputId).value = name;
+    document.querySelector(`#${inputId}`).closest('.item-autocomplete-wrapper').querySelector('.item-dropdown').classList.add('hidden');
+
+    if (arrayName === 'deliveryItems') {
+        deliveryItems[index][fieldName] = name;
+        if (!deliveryItems[index].label) deliveryItems[index].label = label;
+        renderDeliveryItems();
+    } else if (arrayName === 'rewardItems') {
+        rewardItems[index][fieldName] = name;
+        renderRewardItems();
+    }
 }
