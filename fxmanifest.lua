@@ -19,6 +19,11 @@ client_scripts {
     'client.lua'
 }
 
+client_exports {
+    'GetAvailableQuests',
+    'GetActiveQuestInstances'
+}
+
 ui_page 'html/index.html'
 
 files {

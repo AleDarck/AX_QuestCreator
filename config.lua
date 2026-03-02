@@ -54,3 +54,84 @@ Config.AdminAcePerm = 'command'
 -- ─── INTEGRACIÓN AX_FactionMenu ─────────────────────────────
 Config.FactionMenuUpdateEvent = 'AX_FactionMenu:UpdateQuestList'
 
+--[[
+
+-- Misiones disponibles para una facción
+local quests = exports['AX_QuestCreator']:GetAvailableQuests(factionId)
+-- Devuelve:
+-- quest.id, quest.name, quest.description
+-- quest.type                  → 'DELIVERY' | 'TERRITORY'
+-- quest.difficulty             → 'easy' | 'medium' | 'hard' | 'extreme'
+-- quest.faction_id             → nil = todas
+-- quest.objective_data         → tabla decodificada
+-- quest.rewards                → { money, xp, items }
+-- quest.is_active_for_faction  → número, si > 0 ya está activa
+-- quest.cooldown_minutes       → minutos configurados
+-- quest.cooldown_remaining     → segundos restantes (0 si disponible)
+-- quest.cooldown_remaining_text → "1H 23M" | "45M" | nil si disponible
+
+-- Misiones activas en curso de una facción
+local active = exports['AX_QuestCreator']:GetActiveQuestInstances(factionId)
+-- Devuelve:
+-- instance.id, instance.quest_id
+-- instance.name, instance.description
+-- instance.type, instance.difficulty
+-- instance.faction_id, instance.accepted_by
+-- instance.objective_data  → tabla decodificada
+-- instance.rewards         → tabla decodificada
+-- instance.started_at
+-- instance.progress:
+--   DELIVERY:  { delivered = { ['item_name'] = cantidad, ... } }
+--   TERRITORY: { kills = 34, required = 50 }
+
+
+
+-- Aceptar una misión
+TriggerServerEvent('AX_QuestCreator:AcceptQuest', questId)
+
+-- Abandonar una misión activa
+TriggerServerEvent('AX_QuestCreator:AbandonQuest', instanceId)
+
+
+-- Se dispara cada vez que hay cambio de progreso,
+-- misión aceptada, completada o abandonada
+RegisterNetEvent('AX_FactionMenu:UpdateQuestList', function()
+    -- Recargar listas llamando a los exports
+end)
+
+
+
+-- 1. Al abrir pestaña de misiones
+local disponibles = exports['AX_QuestCreator']:GetAvailableQuests(factionId)
+local activas     = exports['AX_QuestCreator']:GetActiveQuestInstances(factionId)
+
+-- 2. Para cada misión disponible verificar si tiene cooldown
+for _, quest in ipairs(disponibles) do
+    if quest.cooldown_remaining > 0 then
+        -- Mostrar quest.cooldown_remaining_text → "1H 23M"
+    elseif quest.is_active_for_faction > 0 then
+        -- Ya está activa, mostrar botón de ver progreso
+    else
+        -- Mostrar botón de aceptar
+    end
+end
+
+-- 3. Para misiones activas mostrar progreso
+for _, instance in ipairs(activas) do
+    if instance.type == 'DELIVERY' then
+        -- instance.progress.delivered['scrap'] / instance.objective_data.items[x].amount
+    elseif instance.type == 'TERRITORY' then
+        -- instance.progress.kills / instance.progress.required
+    end
+end
+
+-- 4. Al aceptar desde el menú (cliente)
+TriggerServerEvent('AX_QuestCreator:AcceptQuest', questId)
+
+-- 5. Escuchar cambios en tiempo real
+RegisterNetEvent('AX_FactionMenu:UpdateQuestList', function()
+    -- volver a llamar los exports y refrescar UI
+end)
+
+
+]]
